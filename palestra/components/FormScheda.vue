@@ -4,54 +4,132 @@
             <h1 class="titolo">Schede di allenamento</h1>
             <form class="form-scheda" @submit.prevent="creaScheda">
                 <div class="input-row">
-                    <div class="input-group">
-                        <input v-model="nome" type="text" id="nome" required placeholder=" " />
+                    <div class="input-group input-top">
                         <label for="nome">Nome scheda</label>
+                        <input
+                            v-model="nome"
+                            type="text"
+                            id="nome"
+                            required
+                            placeholder="Es. Lunedì petto / schiena"
+                        />
                     </div>
-                    <div class="input-group">
-                        <textarea v-model="descrizione" id="descrizione" rows="2" required placeholder=" "></textarea>
+                    <div class="input-group input-top">
                         <label for="descrizione">Descrizione</label>
+                        <textarea
+                            v-model="descrizione"
+                            id="descrizione"
+                            rows="2"
+                            required
+                            placeholder="Note generali sulla seduta"
+                        ></textarea>
                     </div>
                 </div>
                 <div class="liste-container">
+                    <!-- Box 1: ricerca + aggiunta veloce -->
                     <div class="lista-box">
+                        <span class="titolo-lista">Cerca o aggiungi un esercizio</span>
                         <div class="lista-header">
-                            <input v-model="search" placeholder="Cerca esercizio..." class="search-input" />
-                            <span class="titolo-lista">Esercizi disponibili</span>
-                            <button type="button" class="btn btn-secondary btn-small"
-                                @click="mostraFormEsercizio = !mostraFormEsercizio">
-                                {{ mostraFormEsercizio ? 'Annulla' : 'Aggiungi nuovo' }}
+                            <input
+                                v-model="search"
+                                type="text"
+                                autocomplete="off"
+                                placeholder="Cerca esercizio..."
+                                class="search-input"
+                                @keyup.enter.prevent="onSearchEnter"
+                            />
+                            <button
+                                type="button"
+                                class="btn btn-secondary btn-small"
+                                :disabled="!suggerisciNuovo || !search.trim()"
+                                @click="aggiungiNuovoEsercizio"
+                            >
+                                Aggiungi nuovo
                             </button>
                         </div>
-                        <div style="display: flex; flex-direction: column; gap: 0.7rem;">
-                            <div v-if="mostraFormEsercizio" class="form-nuovo-esercizio">
-                                <div class="input-group input-inline">
-                                    <label for="nuovo-nome" class="input-label">Nome esercizio</label>
-                                    <input v-model="nuovoEsercizio.nome" id="nuovo-nome" type="text" required />
-                                </div>
-                                <div class="input-group input-inline">
-                                    <label for="nuova-descrizione" class="input-label">Descrizione</label>
-                                    <textarea v-model="nuovoEsercizio.descrizione" id="nuova-descrizione"
-                                        rows="2"></textarea>
-                                </div>
-                                <div class="bottoni-mini">
-                                    <button type="button" class="btn btn-primary btn-small"
-                                        @click="aggiungiNuovoEsercizio">Salva</button>
-                                    <button type="button" class="btn btn-secondary btn-small"
-                                        @click="annullaNuovoEsercizio">Annulla</button>
-                                </div>
-                            </div>
-                            <div class="esercizi-list">
-                                <slot name="disponibili"></slot>
+                        <div v-if="suggerisciNuovo" class="suggerimento-nuovo">
+                            Nessun esercizio trovato con questo nome.
+                            Clicca "Aggiungi nuovo" per creare "{{ search }}".
+                        </div>
+                    </div>
+
+                    <!-- Box 2: tutti gli esercizi dal DB, scrollabili -->
+                    <div class="lista-box lista-box-tutti">
+                        <span class="titolo-lista">Tutti gli esercizi</span>
+                        <div class="esercizi-list esercizi-list-disponibili">
+                            <div v-if="loadingEsercizi">Caricamento esercizi...</div>
+                            <div v-else>
+                                <ul class="lista-esercizi">
+                                    <li
+                                        v-for="es in eserciziFiltrati"
+                                        :key="es.id"
+                                        class="riga-esercizio"
+                                        @click="aggiungiEsercizioAllaScheda(es)"
+                                    >
+                                        {{ es.nome }}
+                                    </li>
+                                </ul>
                             </div>
                         </div>
                     </div>
+
+                    <!-- Box 3: esercizi presenti nella scheda -->
                     <div class="lista-box">
-                        <div class="lista-header">
-                            <span class="titolo-lista">Esercizi nella scheda</span>
-                        </div>
-                        <div class="esercizi-list">
-                            <slot name="selezionati"></slot>
+                        <span class="titolo-lista">Esercizi nella scheda</span>
+                        <div class="esercizi-list esercizi-list-scheda">
+                            <table v-if="eserciziScheda.length" class="tabella-scheda">
+                                <thead>
+                                    <tr>
+                                        <th>Esercizio</th>
+                                        <th>Serie</th>
+                                        <th>Recupero (sec)</th>
+                                        <th>Peso (kg)</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="(riga, idx) in eserciziScheda" :key="riga.id || idx">
+                                        <td>{{ riga.nome }}</td>
+                                        <td>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                v-model.number="riga.serie"
+                                                class="input-tabella"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                v-model.number="riga.recupero"
+                                                class="input-tabella"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                step="0.5"
+                                                v-model.number="riga.peso"
+                                                class="input-tabella"
+                                            />
+                                        </td>
+                                        <td>
+                                            <button
+                                                type="button"
+                                                class="btn btn-secondary btn-small"
+                                                @click="rimuoviEsercizioDaScheda(idx)"
+                                            >
+                                                Rimuovi
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <div v-else class="vuota-helper">
+                                Clicca un esercizio a sinistra per aggiungerlo alla scheda.
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -64,7 +142,7 @@
     </div>
 </template>
 <script setup>
-import { ref } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { useEserciziStore } from '../stores/esercizi';
 
 const eserciziStore = useEserciziStore();
@@ -73,30 +151,98 @@ const nome = ref('');
 const descrizione = ref('');
 const search = ref('');
 
-const nuovoEsercizio = ref({ nome: '', descrizione: '' });
-const mostraFormEsercizio = ref(false);
+const suggerisciNuovo = ref(false);
 
-async function aggiungiNuovoEsercizio() {
-    if (nuovoEsercizio.value.nome.trim()) {
-        try {
-            await eserciziStore.aggiungiEsercizio(nuovoEsercizio.value);
-            nuovoEsercizio.value = { nome: '', descrizione: '' };
-            mostraFormEsercizio.value = false;
-            // Emetti evento per selezionare automaticamente il nuovo esercizio nella scheda
-            // (assumendo che il parent gestisca la selezione)
-        } catch (error) {
-            console.error('Errore creazione esercizio:', error);
+const eserciziScheda = ref([]);
+
+const esercizi = computed(() => eserciziStore.lista || []);
+const loadingEsercizi = computed(() => eserciziStore.loading);
+
+const eserciziFiltrati = computed(() => {
+    const query = search.value.trim().toLowerCase();
+    if (!query) return esercizi.value;
+    return esercizi.value.filter((es) =>
+        (es.nome || '').toLowerCase().includes(query)
+    );
+});
+
+watch(
+    () => search.value,
+    (val) => {
+        const query = val.trim().toLowerCase();
+        if (!query) {
+            suggerisciNuovo.value = false;
+            return;
         }
+
+        suggerisciNuovo.value = eserciziFiltrati.value.length === 0;
+    }
+);
+
+onMounted(async () => {
+    if (!eserciziStore.lista.length) {
+        await eserciziStore.caricaEsercizi();
+    }
+});
+
+function onSearchEnter() {
+    if (suggerisciNuovo.value && search.value.trim()) {
+        aggiungiNuovoEsercizio();
     }
 }
 
-function annullaNuovoEsercizio() {
-    nuovoEsercizio.value = { nome: '', descrizione: '' };
-    mostraFormEsercizio.value = false;
+function aggiungiEsercizioAllaScheda(es) {
+    // evita duplicati semplici per id
+    if (eserciziScheda.value.some((r) => r.esercizioId === es.id)) return;
+
+    eserciziScheda.value.push({
+        esercizioId: es.id,
+        nome: es.nome,
+        serie: 3,
+        recupero: 60,
+        peso: 0,
+    });
+}
+
+function rimuoviEsercizioDaScheda(index) {
+    eserciziScheda.value.splice(index, 1);
+}
+
+async function aggiungiNuovoEsercizio() {
+    const nomeEsercizio = search.value.trim();
+    if (!nomeEsercizio) return;
+
+    try {
+        await eserciziStore.aggiungiEsercizio({
+            nome: nomeEsercizio,
+            descrizione: '',
+        });
+        // assicuriamoci di avere la lista aggiornata dal db
+        await eserciziStore.caricaEsercizi();
+        search.value = '';
+        suggerisciNuovo.value = false;
+        // opzionale: qui potresti emettere un evento per selezionare
+        // automaticamente l'esercizio appena creato nella scheda
+    } catch (error) {
+        console.error('Errore creazione esercizio:', error);
+    }
 }
 
 function creaScheda() {
-    // logica di creazione scheda
+    const payload = {
+        nome: nome.value,
+        descrizione: descrizione.value,
+        esercizi: eserciziScheda.value.map((r) => ({
+            esercizioId: r.esercizioId,
+            serie: r.serie,
+            recupero: r.recupero,
+            peso: r.peso,
+        })),
+    };
+
+    // TODO: emettere evento "salva" verso il parent con i dati
+    // per ora facciamo solo console.log per non rompere l'API esistente
+    console.log('creaScheda payload', payload);
 }
 
 function annulla() {
@@ -151,6 +297,46 @@ function annulla() {
     flex-wrap: wrap;
 }
 
+.input-group.input-top {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    flex: 1 1 100%;
+}
+
+.input-group.input-top label {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #4b5563;
+}
+
+.input-group.input-top input,
+.input-group.input-top textarea {
+    padding: 0.85rem 1rem;
+    font-size: 1rem;
+    border-radius: 10px;
+    border: 1.5px solid #d1d5db;
+    background: #f9fafb;
+    color: #111827;
+    outline: none;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+    pointer-events: auto;
+    position: relative;
+    z-index: 1;
+}
+
+.input-group.input-top input:focus,
+.input-group.input-top textarea:focus {
+    border-color: #4f8cff;
+    background: #ffffff;
+    box-shadow: 0 0 0 1px rgba(79, 140, 255, 0.4);
+}
+
+.input-group.input-top textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
 
 .input-group.input-inline {
     display: flex;
@@ -198,31 +384,16 @@ function annulla() {
 }
 
 
+/* stile base per altre input-group generiche */
 .input-group label {
-    color: #7b7f87;
-    font-size: 1rem;
-    pointer-events: none;
-    background: transparent;
-    transition: 0.2s cubic-bezier(.4, 0, .2, 1);
-    padding: 0 0.2rem;
-    position: static;
-    left: unset;
-    top: unset;
-}
-
-
-.input-group input:focus+label,
-.input-group input:not(:placeholder-shown)+label,
-.input-group textarea:focus+label,
-.input-group textarea:not(:placeholder-shown)+label {
+    color: #6b7280;
     font-size: 0.95rem;
-    color: #4f8cff;
-    background: #fff;
 }
 
 .liste-container {
     display: flex;
-    gap: 1.2rem;
+    flex-direction: column;
+    gap: 1rem;
     margin: 0.5rem 0 0.5rem 0;
 }
 
@@ -297,7 +468,13 @@ function annulla() {
     display: flex;
     align-items: center;
     gap: 0.7rem;
-    margin-bottom: 1rem;
+    margin-bottom: 0.6rem;
+}
+
+.suggerimento-nuovo {
+    font-size: 0.9rem;
+    color: #6b7280;
+    margin-bottom: 0.7rem;
 }
 
 .form-nuovo-esercizio {
@@ -356,7 +533,69 @@ function annulla() {
 
 .esercizi-list {
     flex: 1;
-    min-height: 60px;
+}
+
+.esercizi-list-disponibili {
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.esercizi-list-scheda {
+    margin-top: 0.2rem;
+}
+
+.lista-box-tutti {
+    min-height: 220px;
+}
+
+.lista-esercizi {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    height: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.riga-esercizio {
+    padding: 0.35rem 0.8rem;
+    border-radius: 999px;
+    border: 1px solid #d1d5db;
+    background: #ffffff;
+    font-size: 0.9rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.riga-esercizio:last-child {
+    border-bottom: none;
+}
+
+.tabella-scheda {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+}
+
+.tabella-scheda th,
+.tabella-scheda td {
+    padding: 0.35rem 0.3rem;
+    border-bottom: 1px solid #e5e7eb;
+    text-align: left;
+}
+
+.input-tabella {
+    width: 70px;
+    padding: 0.2rem 0.3rem;
+    font-size: 0.9rem;
+    border-radius: 5px;
+    border: 1px solid #d1d5db;
+}
+
+.vuota-helper {
+    font-size: 0.9rem;
+    color: #6b7280;
 }
 
 .search-input {
@@ -376,10 +615,12 @@ function annulla() {
 }
 
 .titolo-lista {
+    display: block;
     font-weight: 600;
-    font-size: 1.1rem;
-    color: #4f8cff;
-    margin-left: 0.2rem;
+    font-size: 0.95rem;
+    color: #4b5563;
+    margin-left: 0.1rem;
+    margin-bottom: 0.25rem;
 }
 
 .bottoni {
@@ -434,11 +675,6 @@ function annulla() {
 
     .form-nuovo-esercizio {
         padding: 0.7rem 0.2rem 0.7rem 0.2rem;
-    }
-
-    .liste-container {
-        flex-direction: column;
-        gap: 1rem;
     }
 }
 
